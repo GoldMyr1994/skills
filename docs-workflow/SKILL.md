@@ -1,63 +1,92 @@
 ---
 name: docs-workflow
 description: >
-  Two-mode documentation skill for a before/after workflow.
-  Use when the user says "brief me", "brief-me", "read the docs in",
-  "load context from", "update-docs", "update the docs in",
-  "write docs after my changes", or "document what I did in".
+  Three-command documentation skill for a before/after workflow.
+  Use this skill whenever the user wants to read, summarize, or get caught up
+  on a docs folder — even if they don't say "brief me" explicitly. Trigger
+  phrases include "brief me", "brief-me", "read the docs in", "load context
+  from", "catch me up", "what's in these docs", "summarize the docs",
+  "what do we have".
+  Also use when the user wants to write or update documentation after finishing
+  work: "update-docs", "update the docs in", "write docs after my changes",
+  "document what I did", "write up what I did".
+  Also use for code standards: "update-standards", "update the standards in",
+  "new coding standard", "add a standard".
+  Append "with issues" to brief-me or update-docs to include GitHub issue work.
 ---
 
 # docs-workflow
 
-Two commands for a before/after documentation workflow.
+Three commands for a before/after documentation workflow.
+
+---
+
+## Bare invocation
+
+**When**: the skill is called without a recognized command keyword.
+
+Present the user with selectable options using an interactive selection tool (e.g., `vscode_askQuestions`) if available. If no interactive tool is available, fall back to a text prompt.
+
+Options to present:
+- **brief-me** — load context from a docs folder
+- **update-docs** — update docs after completed work
+- **update-standards** — update code standards files
+- **Include GitHub issues?** — yes / no
+
+Wait for the user to pick before proceeding.
 
 ---
 
 ## GitHub CLI rules
 
-These rules apply to both **brief-me** and **update-docs** whenever GitHub issues are involved.
+Only apply when the user appends **"with issues"** to a brief-me or update-docs command.
 
-- Use `gh issue view <number>` or `gh issue view <url>` to read issues explicitly referenced by number or URL.
-- Use `gh issue list` only when the user explicitly asks to find related issues, or when the repository is known but the issue reference is incomplete.
-- Use `gh issue edit` to update issues: supported fields are `--title`, `--body`, `--add-label`, `--remove-label`, `--add-assignee`, `--remove-assignee`, `--milestone`, `--remove-milestone`.
-- Use `gh issue close` to close issues: supported flags are `--reason {completed|not planned|duplicate}`, `--comment`, `--duplicate-of`.
-- Do not use `--web` on any `gh issue` command.
-- Do not run `gh auth login`, `gh auth refresh`, or any other authentication command.
-- Do not run a separate availability or authentication check before using `gh`.
-- Do not retry a failed `gh` command with alternate auth or fallback flows.
-- If a `gh` command fails, report the failure clearly and continue with the remaining non-issue work.
+- Read issues with `gh issue view <number>` or `gh issue view <url>`.
+- List issues with `gh issue list` only if the user asks to find related issues without specifying numbers.
+- Edit issues with `gh issue edit`: supported flags are `--title`, `--body`, `--add-label`, `--remove-label`, `--add-assignee`, `--remove-assignee`, `--milestone`, `--remove-milestone`.
+- Close issues with `gh issue close`: supported flags are `--reason {completed|not planned|duplicate}`, `--comment`, `--duplicate-of`.
+- Do not use `--web`, authentication commands, or pre-flight auth checks.
+- If a `gh` command fails, report it and continue with remaining work.
+
+---
+
+## Doc writing rules
+
+Apply to all docs created or updated by this skill.
+
+- **Progressive disclosure**: lead with the essential fact; add detail only if needed to avoid ambiguity. (Readers scan first, read second — front-load what matters.)
+- **Minimal**: no filler words, no introductory phrases, no summaries of what you just said. (Saves context window and reader attention.)
+- **No code**: prose only — no code blocks, inline code, or command snippets. Exception: files written by `update-standards`. (Keeps docs tool-agnostic and readable by non-developers.)
+- **500-word cap**: each file must not exceed 500 words. Split into multiple files if needed. (Forces atomic files — easier to navigate and update independently.)
 
 ---
 
 ## brief-me
 
-**Use when**: the user is about to start work and wants to get up to speed by reading an existing docs folder, optionally alongside referenced GitHub issues.
+**Use when**: the user is about to start work and wants to load context from an existing docs folder.
 
 **Steps**:
 
 1. Read all files in the specified path recursively.
-2. If the prompt references GitHub issues by number or URL, use `gh issue view` to read each one. If the prompt asks to find related issues without specifying exact numbers, use `gh issue list` to discover them.
-3. If any `gh` command fails, skip the GitHub issue portion and continue with the docs-only summary.
-4. Produce a clear, synthesized summary of what the docs and any successfully retrieved GitHub issues cover — what exists, what the key topics are, and how things relate to each other. Don't just list files; explain the content.
-5. Highlight any explicit TODOs, open questions, or "future work" items you find in the docs and any successfully retrieved GitHub issues as a quick recap of pending work.
-6. Note anything that appears incomplete, missing, or unclear.
-7. End with: "Context loaded. Here's what I found — let me know when you're ready to start."
+2. If invoked **with issues**: read any issues referenced by number or URL; if the user asks to find related issues, use `gh issue list`.
+3. Synthesize what exists: key topics, how things relate, what is complete vs. incomplete.
+4. List explicit TODOs, open questions, or pending work found in the docs (and issues, if loaded).
+5. Note anything incomplete, missing, or unclear.
+6. End with: "Context loaded. Ready when you are."
 
 **Output format**:
 
-```
 ## Summary
 ...
 
 ## Key Topics
 - ...
 
-## ⚠️ Gaps or Unclear Areas
+## Gaps
 - ...
 
-## TODOs and Open Questions
+## TODOs
 - ...
-```
 
 If the path doesn't exist or has no readable files, say so and stop.
 
@@ -65,44 +94,64 @@ If the path doesn't exist or has no readable files, say so and stop.
 
 ## update-docs
 
-**Use when**: the user has finished work and wants to create or update docs in a specified folder to reflect what was done.
+**Use when**: the user has finished work and wants to create or update docs to reflect what was done.
 
-### Phase 1 — Plan (always run first)
+### Phase 1 — Plan
 
-1. Identify what changed this session using the current conversation as the primary source:
-   - Infer changes from what the user has described doing (features, tickets, files, refactors, etc.) in this chat
-   - If the user or conversation explicitly mentions branches, commits, or asks you to look at git history, then run targeted git commands (for example `git diff`, `git show`, or `git log`) to refine your understanding
-   - If the conversation explicitly mentions existing GitHub issues that should be updated or closed, include those as part of the plan
-2. Read existing docs in the specified path to understand what's already there
-3. Produce a doc update plan — for each proposed change include:
-   - Action: `CREATE` or `UPDATE`
-   - Target file path
-   - One-line reason why
-   - For issue updates, use `ISSUE-UPDATE <number>` and specify exactly what will change: `--title`, `--body`, `--add-label`, `--remove-label`, `--add-assignee`, `--remove-assignee`, `--milestone`, or `--remove-milestone`
-   - For issue closures, use `ISSUE-CLOSE <number>` and specify the reason (`completed`, `not planned`, or `duplicate`) plus an optional `--comment`
+1. Identify what changed from the conversation. If the user mentions branches or commits, run targeted git commands to refine your understanding.
+2. Read existing docs in the specified path. If the path is empty or doesn't exist, ask the user to confirm the path or whether to create it before continuing.
+3. Note the conventions of existing docs — naming patterns, heading style, tone, file organization — and carry them into Phase 2.
+4. If invoked **with issues**: include issue updates or closures in the plan. Use `ISSUE-UPDATE <number>` or `ISSUE-CLOSE <number>` with the exact fields to change.
+5. Produce a plan. For each change include: action (`CREATE`, `UPDATE`, `ISSUE-UPDATE`, or `ISSUE-CLOSE`), target, one-line reason.
 
-**Plan output format**:
+**Plan format**:
 
-```
 ## Doc Update Plan
 
-- UPDATE `path/to/existing.md` — reason
-- CREATE `path/to/new.md` — reason
-- ISSUE-UPDATE `#123` — add-label "done", remove-label "in-progress"
-- ISSUE-CLOSE `#456` — reason: completed, comment: "Resolved by docs update"
+- UPDATE path/to/existing.md — reason
+- CREATE path/to/new.md — reason
+- ISSUE-UPDATE #123 — add-label "done", remove-label "in-progress"
+- ISSUE-CLOSE #456 — reason: completed
 
 Proceed with writing? (yes / no)
-```
 
-Stop here and wait for user approval before writing anything.
+Stop and wait for approval.
 
-### Phase 2 — Write (only after approval)
+### Phase 2 — Write
 
-4. Execute the approved plan:
-   - **Update** existing docs in place, matching their existing tone and structure
-   - **Create** new docs, matching the style of other files in the folder
-   - Execute only issue actions that appear explicitly in the approved plan — do not infer additional issue work during this phase
-   - Use `gh issue edit` for `ISSUE-UPDATE` actions and `gh issue close` for `ISSUE-CLOSE` actions, following the GitHub CLI rules above
-5. After writing, list what was created, updated, or changed. For each issue action, report the result as `SUCCEEDED` or `FAILED`.
+6. Execute the approved plan. Match the conventions identified in step 3. Apply doc writing rules above. For issue actions use `gh issue edit` and `gh issue close`. Report each as SUCCEEDED or FAILED.
+7. List what was created, updated, or changed.
 
-If you can't determine what changed from the conversation and any explicitly requested git checks, ask the user to describe what they did before producing the plan.
+If you can't determine what changed, ask the user before producing the plan.
+
+---
+
+## update-standards
+
+**Use when**: the user says "update-standards", "update the standards in", "new coding standard", or "add a standard" followed by a path.
+
+**Purpose**: create or update code standards files. Code is allowed here.
+
+**Scope**: standards define *how* code should be written — naming conventions, formatting rules, architectural patterns, decision records. Regular docs (handled by `update-docs`) describe *what* exists and *what* was done. If unsure whether something is a standard or a doc, ask the user.
+
+### Phase 1 — Plan
+
+1. Read existing standards files in the specified path.
+2. Identify what standards to add, change, or remove based on the conversation.
+3. Produce a plan. For each change include: action (`CREATE` or `UPDATE`), target path, one-line reason.
+
+**Plan format**:
+
+## Standards Update Plan
+
+- UPDATE path/to/standards.md — reason
+- CREATE path/to/standards.md — reason
+
+Proceed with writing? (yes / no)
+
+Stop and wait for approval.
+
+### Phase 2 — Write
+
+4. Execute the approved plan. Each standards file may contain code examples. Keep prose minimal; let the examples speak.
+5. List what was created or updated.
